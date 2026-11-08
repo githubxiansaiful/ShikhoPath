@@ -1,0 +1,1266 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum LearningLevel {
+  ABSOLUTE_BEGINNER
+  BEGINNER
+  ELEMENTARY
+  PRE_INTERMEDIATE
+  INTERMEDIATE
+  UPPER_INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonContentType {
+  TEXT
+  VIDEO
+  AUDIO
+  EXERCISE
+  VOCABULARY_LIST
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PracticeType {
+  MCQ
+  FILL_BLANKS
+  SENTENCE_CORRECTION
+  WORD_ORDER
+  TRUE_FALSE
+  ERROR_IDENTIFICATION
+  FREE_WRITING
+}
+
+enum ExampleType {
+  POSITIVE
+  NEGATIVE
+  QUESTION
+}
+
+enum VocabularyStatus {
+  NEW
+  LEARNING
+  REVIEW
+  MASTERED
+}
+
+enum IELTSModuleType {
+  READING
+  LISTENING
+  WRITING
+  SPEAKING
+}
+
+enum IELTSTestType {
+  ACADEMIC
+  GENERAL_TRAINING
+}
+
+enum MockTestType {
+  FULL
+  READING_ONLY
+  LISTENING_ONLY
+  WRITING_ONLY
+  SPEAKING_ONLY
+}
+
+enum TestAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EVALUATED
+  EXPIRED
+}
+
+enum TutorMode {
+  GRAMMAR
+  VOCABULARY
+  CONVERSATION
+  SENTENCE_CORRECTION
+  IELTS_SPEAKING
+  IELTS_WRITING
+  ACADEMIC
+  PROFESSIONAL
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+  LIFETIME
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ----------------------------------------------------
+// 1. AUTHENTICATION & USERS
+// ----------------------------------------------------
+
+model User {
+  id                String       @id @default(uuid())
+  name              String
+  email             String       @unique
+  passwordHash      String?
+  role              UserRole     @default(USER)
+  status            UserStatus   @default(ACTIVE)
+  emailVerified     DateTime?
+  image             String?
+  preferredLanguage String       @default("en") // "en" | "bn"
+  twoFactorEnabled  Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  // Relationships
+  accounts          Account[]
+  sessions          Session[]
+  profile           UserProfile?
+  preference        UserPreference?
+  subscriptions     Subscription[]
+  entitlementOverrides EntitlementOverride[]
+  lessonProgress    LessonProgress[]
+  enrollments       CourseEnrollment[]
+  userVocabularies  UserVocabulary[]
+  vocabularyReviews VocabularyReview[]
+  vocabularyLists   VocabularyList[]
+  questionAttempts  QuestionAttempt[]
+  testAttempts      TestAttempt[]
+  aiConversations   AIConversation[]
+  aiUsages          AIUsage[]
+  studyPlans        StudyPlan[]
+  dailyProgress     DailyProgress[]
+  learningStreak    LearningStreak?
+  userMistakes      UserMistake[]
+  recommendations   LearningRecommendation[]
+  adminActivities   AdminActivity[]
+  auditLogs         AuditLog[]
+  supportTickets    SupportTicket[]
+  couponRedemptions CouponRedemption[]
+  payments          Payment[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model Account {
+  id                String   @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  type       String   @default("EMAIL_VERIFY") // EMAIL_VERIFY, PASSWORD_RESET
+
+  @@unique([identifier, token])
+}
+
+model UserProfile {
+  id               String         @id @default(uuid())
+  userId           String         @unique
+  bio              String?        @db.Text
+  phone            String?
+  country          String?        @default("Bangladesh")
+  targetLevel      LearningLevel? @default(INTERMEDIATE)
+  currentLevel     LearningLevel? @default(BEGINNER)
+  learningGoal     String?        // e.g. "IELTS preparation", "Daily conversation"
+  dailyTimeMinutes Int            @default(20)
+  ieltsTargetBand  Decimal?       @db.Decimal(3, 1)
+  targetExamDate   DateTime?
+  avatarUrl        String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserPreference {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  language           String   @default("en") // "en" | "bn"
+  theme              String   @default("light") // "light" | "dark" | "system"
+  emailNotifications Boolean  @default(true)
+  dailyReminder      Boolean  @default(true)
+  reminderTime       String?  @default("20:00")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// 2. RBAC & AUDIT LOGGING
+// ----------------------------------------------------
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g. "courses:create", "users:manage"
+  group       String   // e.g. "Courses", "Users", "Subscriptions"
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         UserRole
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+}
+
+model AdminActivity {
+  id         String   @id @default(uuid())
+  adminId    String
+  action     String   // e.g. "GRANT_PREMIUM", "SUSPEND_USER", "UPDATE_LESSON"
+  targetType String   // e.g. "USER", "COURSE", "SUBSCRIPTION"
+  targetId   String
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  eventType String   // e.g. "SUSPICIOUS_LOGIN", "RATE_LIMIT_EXCEEDED", "INVALID_CSRF"
+  severity  String   // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  ipAddress String?
+  userAgent String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// 3. LEARNING ENGINE (COURSES, MODULES, LESSONS)
+// ----------------------------------------------------
+
+model CourseCategory {
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  nameEn        String
+  nameBn        String
+  descriptionEn String?  @db.Text
+  descriptionBn String?  @db.Text
+  icon          String?
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  courses Course[]
+}
+
+model Course {
+  id            String         @id @default(uuid())
+  slug          String         @unique
+  categoryId    String
+  titleEn       String
+  titleBn       String
+  descriptionEn String         @db.Text
+  descriptionBn String         @db.Text
+  level         LearningLevel  @default(BEGINNER)
+  coverImage    String?
+  durationHours Int            @default(10)
+  isPremium     Boolean        @default(false)
+  isPublished   Boolean        @default(true)
+  order         Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  category    CourseCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  modules     CourseModule[]
+  enrollments CourseEnrollment[]
+
+  @@index([categoryId])
+  @@index([level])
+  @@index([isPremium])
+  @@index([isPublished])
+}
+
+model CourseModule {
+  id            String   @id @default(uuid())
+  courseId      String
+  titleEn       String
+  titleBn       String
+  descriptionEn String?  @db.Text
+  descriptionBn String?  @db.Text
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id              String         @id @default(uuid())
+  moduleId        String
+  slug            String         @unique
+  titleEn         String
+  titleBn         String
+  descriptionEn   String?        @db.Text
+  descriptionBn   String?        @db.Text
+  durationMinutes Int            @default(15)
+  order           Int            @default(0)
+  isPremium       Boolean        @default(false)
+  isPublished     Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  module   CourseModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  contents LessonContent[]
+  progress LessonProgress[]
+
+  @@index([moduleId])
+  @@index([isPremium])
+  @@index([isPublished])
+}
+
+model LessonContent {
+  id        String            @id @default(uuid())
+  lessonId  String
+  type      LessonContentType @default(TEXT)
+  titleEn   String?
+  titleBn   String?
+  contentEn String            @db.Text
+  contentBn String            @db.Text
+  mediaUrl  String?
+  order     Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+}
+
+model LessonProgress {
+  id              String         @id @default(uuid())
+  userId          String
+  lessonId        String
+  status          ProgressStatus @default(NOT_STARTED)
+  lastPositionSec Int            @default(0)
+  completedAt     DateTime?
+  updatedAt       DateTime       @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model CourseEnrollment {
+  id              String    @id @default(uuid())
+  userId          String
+  courseId        String
+  enrolledAt      DateTime  @default(now())
+  progressPercent Int       @default(0)
+  completedAt     DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+// ----------------------------------------------------
+// 4. GRAMMAR ACADEMY
+// ----------------------------------------------------
+
+model GrammarCategory {
+  id            String         @id @default(uuid())
+  slug          String         @unique
+  nameEn        String
+  nameBn        String
+  descriptionEn String?        @db.Text
+  descriptionBn String?        @db.Text
+  order         Int            @default(0)
+  topics        GrammarTopic[]
+}
+
+model GrammarTopic {
+  id            String          @id @default(uuid())
+  categoryId    String
+  slug          String          @unique
+  titleEn       String
+  titleBn       String
+  descriptionEn String?         @db.Text
+  descriptionBn String?         @db.Text
+  level         LearningLevel   @default(BEGINNER)
+  order         Int             @default(0)
+
+  category GrammarCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  lessons  GrammarLesson[]
+
+  @@index([categoryId])
+}
+
+model GrammarLesson {
+  id               String            @id @default(uuid())
+  topicId          String
+  slug             String            @unique
+  titleEn          String
+  titleBn          String
+  explanationEn    String            @db.Text
+  explanationBn    String            @db.Text
+  structureEn      String?           @db.Text
+  structureBn      String?           @db.Text
+  commonMistakesEn String?           @db.Text
+  commonMistakesBn String?           @db.Text
+  isPremium        Boolean           @default(false)
+  order            Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  topic     GrammarTopic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  examples  GrammarExample[]
+  exercises GrammarExercise[]
+
+  @@index([topicId])
+  @@index([isPremium])
+}
+
+model GrammarExample {
+  id            String        @id @default(uuid())
+  lessonId      String
+  type          ExampleType   @default(POSITIVE)
+  sentenceEn    String
+  sentenceBn    String
+  explanationEn String?       @db.Text
+  explanationBn String?       @db.Text
+  order         Int           @default(0)
+
+  lesson GrammarLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+}
+
+model GrammarExercise {
+  id            String       @id @default(uuid())
+  lessonId      String
+  type          PracticeType @default(MCQ)
+  questionEn    String       @db.Text
+  questionBn    String       @db.Text
+  options       Json?        // List of string options or objects
+  correctAnswer String       @db.Text
+  explanationEn String       @db.Text
+  explanationBn String       @db.Text
+  order         Int          @default(0)
+
+  lesson GrammarLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+}
+
+// ----------------------------------------------------
+// 5. VOCABULARY BUILDER
+// ----------------------------------------------------
+
+model VocabularyCategory {
+  id        String       @id @default(uuid())
+  slug      String       @unique
+  nameEn    String
+  nameBn    String
+  order     Int          @default(0)
+  words     Vocabulary[]
+}
+
+model Vocabulary {
+  id              String         @id @default(uuid())
+  categoryId      String?
+  word            String         @unique
+  phonetic        String?
+  partOfSpeech    String?        // e.g. "noun", "verb", "adjective"
+  definitionEn    String         @db.Text
+  meaningBn       String         @db.Text
+  exampleEn       String         @db.Text
+  exampleBn       String         @db.Text
+  synonyms        String[]
+  antonyms        String[]
+  audioUrl        String?
+  difficultyLevel LearningLevel  @default(BEGINNER)
+  ieltsRelevance  Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  category          VocabularyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  userVocabularies  UserVocabulary[]
+  vocabularyReviews VocabularyReview[]
+  listItems         VocabularyListItem[]
+
+  @@index([word])
+  @@index([categoryId])
+  @@index([difficultyLevel])
+  @@index([ieltsRelevance])
+}
+
+model UserVocabulary {
+  id             String           @id @default(uuid())
+  userId         String
+  vocabularyId   String
+  status         VocabularyStatus @default(NEW)
+  repetitions    Int              @default(0)
+  intervalDays   Int              @default(1)
+  easeFactor     Decimal          @default(2.5) @db.Decimal(3, 2)
+  nextReviewDate DateTime         @default(now())
+  lastReviewedAt DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabulary Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vocabularyId])
+  @@index([userId, status])
+  @@index([nextReviewDate])
+}
+
+model VocabularyReview {
+  id           String   @id @default(uuid())
+  userId       String
+  vocabularyId String
+  quality      Int      // 0-5 rating (SuperMemo algorithm)
+  reviewedAt   DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabulary Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VocabularyList {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items VocabularyListItem[]
+
+  @@index([userId])
+}
+
+model VocabularyListItem {
+  id             String   @id @default(uuid())
+  listId         String
+  vocabularyId   String
+  addedAt        DateTime @default(now())
+
+  list       VocabularyList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  vocabulary Vocabulary     @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, vocabularyId])
+}
+
+// ----------------------------------------------------
+// 6. GENERAL PRACTICE & MISTAKES
+// ----------------------------------------------------
+
+model QuestionCategory {
+  id        String     @id @default(uuid())
+  slug      String     @unique
+  nameEn    String
+  nameBn    String
+  questions Question[]
+}
+
+model Question {
+  id            String        @id @default(uuid())
+  categoryId    String
+  type          PracticeType  @default(MCQ)
+  difficulty    LearningLevel @default(BEGINNER)
+  promptEn      String        @db.Text
+  promptBn      String        @db.Text
+  options       Json?         // e.g. array of choices
+  correctAnswer String        @db.Text
+  explanationEn String        @db.Text
+  explanationBn String        @db.Text
+  createdAt     DateTime      @default(now())
+
+  category QuestionCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attempts QuestionAttempt[]
+  mistakes UserMistake[]
+
+  @@index([categoryId])
+  @@index([difficulty])
+}
+
+model QuestionAttempt {
+  id             String   @id @default(uuid())
+  userId         String
+  questionId     String
+  selectedOption String?
+  isCorrect      Boolean
+  timeSpentSec   Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([questionId])
+}
+
+model UserMistake {
+  id            String   @id @default(uuid())
+  userId        String
+  questionId    String?
+  source        String   // "GRAMMAR", "VOCABULARY", "IELTS", "QUIZ"
+  userAnswer    String   @db.Text
+  correctAnswer String   @db.Text
+  explanationEn String   @db.Text
+  explanationBn String   @db.Text
+  isUnderstood  Boolean  @default(false)
+  count         Int      @default(1)
+  lastOccurred  DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([isUnderstood])
+}
+
+// ----------------------------------------------------
+// 7. IELTS PREPARATION & MOCK TESTS
+// ----------------------------------------------------
+
+model IELTSModule {
+  id            String          @id @default(uuid())
+  moduleType    IELTSModuleType
+  titleEn       String
+  titleBn       String
+  descriptionEn String          @db.Text
+  descriptionBn String          @db.Text
+  order         Int             @default(0)
+
+  practices IELTSPractice[]
+}
+
+model IELTSPractice {
+  id          String        @id @default(uuid())
+  moduleId    String
+  titleEn     String
+  titleBn     String
+  isAcademic  Boolean       @default(true)
+  difficulty  LearningLevel @default(INTERMEDIATE)
+  isPremium   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  module        IELTSModule             @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  passages      IELTSReadingPassage[]
+  audios        IELTSListeningAudio[]
+  writingTasks  IELTSWritingTask[]
+  speakingCards IELTSSpeakingCueCard[]
+
+  @@index([moduleId])
+}
+
+model IELTSReadingPassage {
+  id            String   @id @default(uuid())
+  practiceId    String
+  passageNumber Int      @default(1) // Passage 1, 2, or 3
+  titleEn       String
+  titleBn       String?
+  content       String   @db.Text
+  questionsJson Json     // List of reading questions with types & answers
+  order         Int      @default(0)
+
+  practice IELTSPractice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([practiceId])
+}
+
+model IELTSListeningAudio {
+  id            String   @id @default(uuid())
+  practiceId    String
+  audioUrl      String
+  transcriptEn  String?  @db.Text
+  transcriptBn  String?  @db.Text
+  questionsJson Json     // Questions corresponding to audio
+  order         Int      @default(0)
+
+  practice IELTSPractice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([practiceId])
+}
+
+model IELTSWritingTask {
+  id             String   @id @default(uuid())
+  practiceId     String
+  taskType       String   // "TASK_1" or "TASK_2"
+  promptEn       String   @db.Text
+  promptBn       String?  @db.Text
+  imageUrl       String?  // Diagram / chart for Task 1
+  sampleAnswerEn String?  @db.Text
+  sampleAnswerBn String?  @db.Text
+  minWords       Int      @default(150)
+  timeMinutes    Int      @default(20)
+
+  practice IELTSPractice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([practiceId])
+}
+
+model IELTSSpeakingCueCard {
+  id               String   @id @default(uuid())
+  practiceId       String
+  partNumber       Int      @default(2) // Part 1, 2, or 3
+  topicEn          String
+  topicBn          String?
+  bulletPointsJson Json     // e.g. ["You should say...", "When...", "Why..."]
+  prepTimeSec      Int      @default(60)
+  speakTimeSec     Int      @default(120)
+
+  practice IELTSPractice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@index([practiceId])
+}
+
+model MockTest {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  titleEn         String
+  titleBn         String
+  type            MockTestType  @default(FULL)
+  testType        IELTSTestType @default(ACADEMIC)
+  durationMinutes Int           @default(160) // 30L + 60R + 60W + 11-14S
+  totalMarks      Decimal       @default(9.0) @db.Decimal(3, 1)
+  isPremium       Boolean       @default(false)
+  isPublished     Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  sections MockTestSection[]
+  attempts TestAttempt[]
+
+  @@index([type])
+  @@index([testType])
+  @@index([isPremium])
+}
+
+model MockTestSection {
+  id              String          @id @default(uuid())
+  mockTestId      String
+  sectionType     IELTSModuleType
+  order           Int             @default(0)
+  durationMinutes Int             @default(60)
+  instructionsEn  String          @db.Text
+  instructionsBn  String          @db.Text
+
+  mockTest  MockTest           @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  questions MockTestQuestion[]
+
+  @@index([mockTestId])
+}
+
+model MockTestQuestion {
+  id               String   @id @default(uuid())
+  sectionId        String
+  order            Int      @default(0)
+  questionDataJson Json     // Content, prompt, options, answer keys, scoring rules
+
+  section MockTestSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+}
+
+model TestAttempt {
+  id                 String            @id @default(uuid())
+  userId             String
+  mockTestId         String
+  status             TestAttemptStatus @default(IN_PROGRESS)
+  startedAt          DateTime          @default(now())
+  submittedAt        DateTime?
+  durationSpentSec   Int               @default(0)
+  totalScore         Decimal?          @db.Decimal(4, 1)
+  bandScoreEstimate  Decimal?          @db.Decimal(3, 1)
+  sectionScoresJson  Json?
+  idempotencyKey     String?           @unique
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mockTest  MockTest       @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  responses TestResponse[]
+  result    TestResult?
+
+  @@index([userId])
+  @@index([mockTestId])
+}
+
+model TestResponse {
+  id               String   @id @default(uuid())
+  attemptId        String
+  questionId       String
+  userResponseJson Json     // User answers
+  score            Decimal? @db.Decimal(4, 1)
+  feedback         String?  @db.Text
+
+  attempt TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+}
+
+model TestResult {
+  id                String   @id @default(uuid())
+  attemptId         String   @unique
+  overallBandScore  Decimal  @db.Decimal(3, 1)
+  listeningBand     Decimal? @db.Decimal(3, 1)
+  readingBand       Decimal? @db.Decimal(3, 1)
+  writingBand       Decimal? @db.Decimal(3, 1)
+  speakingBand      Decimal? @db.Decimal(3, 1)
+  feedbackEn        String   @db.Text
+  feedbackBn        String   @db.Text
+  evaluatedAt       DateTime @default(now())
+
+  attempt TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// 8. AI ENGLISH TUTOR
+// ----------------------------------------------------
+
+model AIConversation {
+  id        String    @id @default(uuid())
+  userId    String
+  mode      TutorMode @default(CONVERSATION)
+  title     String    @default("New Conversation")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIMessage[]
+
+  @@index([userId])
+}
+
+model AIMessage {
+  id             String      @id @default(uuid())
+  conversationId String
+  role           MessageRole @default(USER)
+  content        String      @db.Text
+  metadataJson   Json?
+  createdAt      DateTime    @default(now())
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model AIUsage {
+  id            String   @id @default(uuid())
+  userId        String
+  tokensUsed    Int      @default(0)
+  endpoint      String   // e.g. "chat", "grammar_eval", "ielts_writing"
+  estimatedCost Decimal  @default(0.000) @db.Decimal(8, 4)
+  date          DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+}
+
+model AIProviderConfiguration {
+  id                  String   @id @default(uuid())
+  provider            String   @unique // "openai", "anthropic", "gemini"
+  modelName           String
+  isActive            Boolean  @default(true)
+  rateLimitPerMinute  Int      @default(30)
+  maxTokensPerRequest Int      @default(1500)
+  updatedAt           DateTime @updatedAt
+}
+
+// ----------------------------------------------------
+// 9. STUDY PLANNER & USER ANALYTICS
+// ----------------------------------------------------
+
+model StudyPlan {
+  id                     String         @id @default(uuid())
+  userId                 String
+  targetLevel            LearningLevel  @default(ADVANCED)
+  examDate               DateTime?
+  dailyMinutes           Int            @default(30)
+  preferredCategoriesJson Json?
+  isActive               Boolean        @default(true)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks StudyTask[]
+
+  @@index([userId])
+}
+
+model StudyTask {
+  id          String   @id @default(uuid())
+  planId      String
+  titleEn     String
+  titleBn     String
+  date        DateTime
+  isCompleted Boolean  @default(false)
+  type        String   // "LESSON", "GRAMMAR", "VOCABULARY", "IELTS_TEST"
+  referenceId String?
+  createdAt   DateTime @default(now())
+
+  plan StudyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@index([date])
+}
+
+model DailyProgress {
+  id                String   @id @default(uuid())
+  userId            String
+  date              DateTime @default(now())
+  lessonsCompleted  Int      @default(0)
+  minutesSpent      Int      @default(0)
+  questionsAnswered Int      @default(0)
+  wordsLearned      Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+}
+
+model LearningStreak {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  currentStreak  Int       @default(0)
+  longestStreak  Int       @default(0)
+  lastActiveDate DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LearningRecommendation {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // "GRAMMAR_REVISION", "VOCABULARY", "IELTS_WEAKNESS"
+  titleEn   String
+  titleBn   String
+  link      String
+  reasonEn  String
+  reasonBn  String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ----------------------------------------------------
+// 10. SUBSCRIPTIONS & ENTITLEMENTS (COMMERCIAL ENGINE)
+// ----------------------------------------------------
+
+model SubscriptionPlan {
+  id              String          @id @default(uuid())
+  code            String          @unique // "FREE", "PREMIUM_MONTHLY", "PREMIUM_YEARLY"
+  nameEn          String
+  nameBn          String
+  descriptionEn   String          @db.Text
+  descriptionBn   String          @db.Text
+  priceAmount     Decimal         @default(0.00) @db.Decimal(10, 2)
+  currency        String          @default("BDT")
+  billingInterval BillingInterval @default(MONTHLY)
+  isActive        Boolean         @default(true)
+  isPublic        Boolean         @default(true)
+  order           Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  features      PlanFeature[]
+  subscriptions Subscription[]
+
+  @@index([code])
+}
+
+model PlanFeature {
+  id            String  @id @default(uuid())
+  planId        String
+  featureKey    String  // e.g. "premium_grammar", "ai_tutor", "mock_tests_unlimited"
+  featureNameEn String
+  featureNameBn String
+  isEnabled     Boolean @default(true)
+  limitValue    Int?    // null = unlimited, number = quota cap
+
+  plan SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([planId])
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  userId             String
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
+  startDate          DateTime           @default(now())
+  endDate            DateTime?
+  autoRenew          Boolean            @default(false)
+  cancellationReason String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+}
+
+model UsageRecord {
+  id           String   @id @default(uuid())
+  userId       String
+  featureKey   String   // e.g. "ai_tutor_messages", "mock_tests_monthly"
+  periodStart  DateTime
+  periodEnd    DateTime
+  currentUsage Int      @default(0)
+  limitValue   Int?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, featureKey, periodStart])
+  @@index([userId, featureKey])
+}
+
+model EntitlementOverride {
+  id               String    @id @default(uuid())
+  userId           String
+  featureKey       String    // e.g. "premium_grammar", "full_mock_tests"
+  isEnabled        Boolean   @default(true)
+  limitOverride    Int?
+  grantedByAdminId String?
+  expiresAt        DateTime?
+  reason           String?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, featureKey])
+  @@index([userId])
+}
+
+model Coupon {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  discountPercent Int?
+  discountAmount  Decimal?  @db.Decimal(10, 2)
+  maxRedemptions  Int?
+  currentUses     Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  redemptions CouponRedemption[]
+}
+
+model CouponRedemption {
+  id         String   @id @default(uuid())
+  couponId   String
+  userId     String
+  redeemedAt DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([userId])
+}
+
+model Payment {
+  id             String   @id @default(uuid())
+  userId         String
+  subscriptionId String?
+  amount         Decimal  @db.Decimal(10, 2)
+  currency       String   @default("BDT")
+  status         String   // "PENDING", "COMPLETED", "FAILED", "REFUNDED"
+  provider       String   // e.g. "BKASH", "NAGAD", "STRIPE", "MANUAL_ADMIN"
+  transactionId  String?  @unique
+  createdAt      DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(uuid())
+  provider    String
+  eventId     String   @unique
+  eventType   String
+  payloadJson Json
+  status      String   @default("PROCESSED") // "RECEIVED", "PROCESSED", "FAILED"
+  createdAt   DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// 11. PLATFORM SETTINGS, SUPPORT & ANNOUNCEMENTS
+// ----------------------------------------------------
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model Announcement {
+  id         String    @id @default(uuid())
+  titleEn    String
+  titleBn    String
+  contentEn  String    @db.Text
+  contentBn  String    @db.Text
+  type       String    @default("INFO") // "INFO", "WARNING", "SUCCESS"
+  isActive   Boolean   @default(true)
+  validUntil DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model SupportTicket {
+  id        String         @id @default(uuid())
+  userId    String
+  subject   String
+  message   String         @db.Text
+  status    TicketStatus   @default(OPEN)
+  priority  TicketPriority @default(MEDIUM)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "enable_turnstile", "enable_ai_speaking"
+  isEnabled   Boolean  @default(false)
+  description String?
+  updatedAt   DateTime @updatedAt
+}
